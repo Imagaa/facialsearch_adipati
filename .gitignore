@@ -5,3 +5,5 @@ __pycache__/
 *.onnx
 *.pt
 node_modules/
+.gitignore
+.env.local
