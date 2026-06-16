@@ -1,9 +1,28 @@
+# =========================
+# LINGKUNGAN NODE.JS (NEXT.JS)
+# =========================
+node_modules/
+.next/
+out/
+build/
+.env*.local
+.env
+
+# =========================
+# LINGKUNGAN PYTHON & AI
+# =========================
 venv/
+env/
 __pycache__/
-*.jpg
-*.png
+*.pyc
+
+# =========================
+# FILE MODEL & MEDIA BERAT
+# =========================
 *.onnx
 *.pt
-node_modules/
-.gitignore
-.env.local
+*.sqlite
+*.db
+# Hati-hati: Jika Anda butuh gambar untuk UI Next.js (di folder public/), 
+# jangan abaikan semua *.png. Cukup abaikan folder RAW saja jika ada.
+Raw/
