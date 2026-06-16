@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.jpg
+*.png
+*.onnx
+*.pt
+node_modules/
