@@ -16,6 +16,7 @@ export default function Home() {
     bib_numbers?: string;
   };
   const [results, setResults] = useState<SearchResult[]>([]);
+  
   const [feedbackMsg, setFeedbackMsg] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -24,7 +25,6 @@ export default function Home() {
   const hitServerAPI = async (bibInput: string, fileBlob: Blob, source: 'UPLOAD' | 'LIVE') => {
     try {
       const formData = new FormData();
-      // Saat LIVE, kita KOSONGKAN bibInput agar backend melakukan murni Face Recognition tanpa filter BIB
       formData.append('bib', source === 'LIVE' ? '' : bibInput);
       formData.append('file', fileBlob, 'selfie.jpg');
 
@@ -41,11 +41,10 @@ export default function Home() {
         setResults(data.data);
         if (source === 'UPLOAD') {
           setStep('SUCCESS_UPLOAD');
-          setFeedbackMsg("Momen luar biasa Anda ditemukan!");
+          setFeedbackMsg("Momen luar biasa Anda berhasil ditemukan.");
         } else {
           setStep('SUCCESS_LIVE');
-          setFeedbackMsg("Deteksi wajah berhasil! Ini momen Anda.");
-          stopCamera();
+          setFeedbackMsg("Deteksi wajah berhasil memetakan momen Anda.");
         }
       } else {
         triggerFallback(source);
@@ -59,35 +58,40 @@ export default function Home() {
   const triggerFallback = (source: 'UPLOAD' | 'LIVE') => {
     if (source === 'UPLOAD') {
       setStep('UPLOAD_FAILED');
-      setFeedbackMsg("Foto Anda dengan BIB tersebut belum ditemukan. Namun jangan khawatir, mari cari menggunakan fitur Face Recognition murni (Live Selfie)!");
+      setFeedbackMsg("Wajah tidak terdeteksi presisi dari foto unggahan. Mari gunakan Live Face Recognition untuk akurasi maksimal.");
     } else {
       setStep('TOTAL_FAILED');
-      setFeedbackMsg("Mohon maaf, dengan 2000++ pelari, tim fotografer kami mungkin terlewat mengabadikan momen Anda, atau sudut wajah tidak terdeteksi mesin. Anda dapat mencarinya secara manual di Galeri G-Drive kami.");
+      setFeedbackMsg("Sistem tidak dapat memetakan kecocokan matriks wajah Anda dengan galeri. Silakan telusuri arsip secara manual.");
       stopCamera();
     }
   };
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!bib || !imageFile) {
-      alert("Harap masukkan Nomor BIB dan unggah foto wajah Anda.");
+    if (!imageFile) {
+      alert("Harap unggah foto wajah Anda terlebih dahulu.");
       return;
     }
     setStep('SCANNING_UPLOAD');
-    setFeedbackMsg("Mengirim data pencarian ke Radar Pusat...");
+    setFeedbackMsg("Menyinkronkan data dengan pusat radar...");
     await hitServerAPI(bib, imageFile, 'UPLOAD');
   };
 
   const startCamera = async () => {
     setStep('CAMERA_READY');
-    setFeedbackMsg("Mohon tatap kamera dan pastikan cahaya cukup...");
+    setFeedbackMsg("Menginisialisasi modul kamera. Mohon pastikan pencahayaan cukup.");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-      if (videoRef.current) videoRef.current.srcObject = stream;
       streamRef.current = stream;
+      // Gunakan setTimeout untuk memastikan React telah me-render elemen <video> ke DOM
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 150);
     } catch (err) {
       console.error(err);
-      alert("Akses kamera ditolak.");
+      alert("Akses kamera tidak diizinkan oleh sistem Anda.");
       setStep('UPLOAD_FAILED');
     }
   };
@@ -102,7 +106,7 @@ export default function Home() {
   const captureLiveSelfie = async () => {
     if (!videoRef.current) return;
     setStep('SCANNING_LIVE');
-    setFeedbackMsg("Menganalisis matriks wajah murni ke database...");
+    setFeedbackMsg("Mengekstrak matriks wajah untuk pencarian basis data...");
     
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
@@ -111,6 +115,7 @@ export default function Home() {
     if (ctx) {
       ctx.drawImage(videoRef.current, 0, 0);
       canvas.toBlob(async (blob) => {
+        stopCamera(); // Segera matikan kamera untuk menghemat resource HP pelari
         if (blob) {
           await hitServerAPI(bib, blob, 'LIVE');
         }
@@ -152,14 +157,17 @@ export default function Home() {
                     }
                   }}
                 />
-                <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur-sm border border-amber-500/50 text-amber-400 text-xs font-bold px-3 py-1 rounded-full shadow-lg">
+                <div className="absolute top-4 right-4 bg-slate-900/90 backdrop-blur-sm border border-amber-500/50 text-amber-400 text-xs font-bold px-3 py-1 rounded-full shadow-lg">
                   {((1 - item.distance) * 100).toFixed(1)}% Match
                 </div>
               </div>
             ) : (
               <div className="h-72 w-full bg-slate-800 flex items-center justify-center p-6 text-center border-b border-slate-700">
                 <div className="space-y-4">
-                  <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <svg className="animate-spin w-10 h-10 text-red-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
                   <p className="text-slate-300 font-medium">Menunggu Sinkronisasi ID</p>
                   <p className="text-xs text-slate-500 truncate px-4">{item.file_name}</p>
                 </div>
@@ -170,7 +178,8 @@ export default function Home() {
               <div>
                 <p className="font-bold text-lg text-slate-200 truncate" title={item.file_name}>{item.file_name}</p>
                 {item.bib_numbers && (
-                  <p className="text-sm text-slate-400 mt-1">
+                  <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
                     BIB Terdeteksi: <span className="font-semibold text-slate-300">{item.bib_numbers}</span>
                   </p>
                 )}
@@ -180,9 +189,10 @@ export default function Home() {
                   href={isSynced ? `https://drive.google.com/uc?export=download&id=${item.gdrive_id}` : fallbackSearchUrl} 
                   target="_blank" 
                   rel="noreferrer" 
-                  className={`block w-full text-center font-bold py-4 rounded-xl transition-all ${isSynced ? 'bg-slate-800 hover:bg-slate-700 text-red-400 border border-red-500/30 hover:shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}
+                  className={`flex items-center justify-center gap-2 w-full text-center font-bold py-4 rounded-xl transition-all ${isSynced ? 'bg-slate-800 hover:bg-slate-700 text-red-400 border border-red-500/30 hover:shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}
                 >
-                  {isSynced ? '⬇️ Unduh Foto Resolusi Tinggi' : '🔍 Cari di Google Drive'}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  {isSynced ? 'Unduh Resolusi Tinggi' : 'Cari di Google Drive'}
                 </a>
               </div>
             </div>
@@ -197,26 +207,26 @@ export default function Home() {
       <div className="max-w-4xl mx-auto px-4 pt-12">
         
         {/* ================= HEADER & LOGOS ================= */}
-        <div className="flex flex-col items-center justify-center space-y-8 mb-12 animate-in fade-in slide-in-from-top-8 duration-700">
+        <div className="flex flex-col items-center justify-center space-y-6 mb-12 animate-in fade-in slide-in-from-top-8 duration-700">
           
-          <div className="flex items-center justify-center gap-6 md:gap-12">
+          <div className="flex items-center justify-center gap-6 md:gap-10">
             <img 
               src="/logo-bi.webp" 
               alt="Bank Indonesia" 
-              className="h-20 md:h-32 w-auto object-contain drop-shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:scale-105 transition-transform duration-500" 
+              className="h-10 md:h-14 w-auto object-contain drop-shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:scale-105 transition-transform duration-500" 
             />
-            <div className="h-16 md:h-24 w-px bg-slate-700/50 hidden sm:block"></div>
+            <div className="h-10 md:h-12 w-px bg-slate-700/50 hidden sm:block"></div>
             <img 
               src="/logo-adipati.webp" 
               alt="Adipati QRIS Run 2026" 
-              className="h-28 md:h-44 w-auto object-contain drop-shadow-[0_0_20px_rgba(251,191,36,0.3)] hover:scale-105 transition-transform duration-500" 
+              className="h-12 md:h-16 w-auto object-contain drop-shadow-[0_0_20px_rgba(251,191,36,0.3)] hover:scale-105 transition-transform duration-500" 
             />
           </div>
           
-          <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 pt-2">
-            <img src="/logo-1.webp" alt="Sponsor 1" className="h-8 md:h-12 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300" />
-            <img src="/logo-2.webp" alt="Sponsor 2" className="h-8 md:h-12 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300" />
-            <img src="/logo-3.webp" alt="Sponsor 3" className="h-8 md:h-12 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300" />
+          <div className="flex flex-wrap items-center justify-center gap-4 md:gap-6 pt-1">
+            <img src="/logo-1.webp" alt="Sponsor 1" className="h-5 md:h-6 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300" />
+            <img src="/logo-2.webp" alt="Sponsor 2" className="h-5 md:h-6 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300" />
+            <img src="/logo-3.webp" alt="Sponsor 3" className="h-5 md:h-6 w-auto object-contain opacity-80 hover:opacity-100 transition-opacity duration-300" />
           </div>
 
           <div className="text-center space-y-2 mt-6">
@@ -235,7 +245,10 @@ export default function Home() {
             <h2 className="text-2xl font-bold text-amber-400 mb-2 text-center">Temukan Foto Anda</h2>
             
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">Nomor BIB (Wajib)</label>
+              <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+                Nomor BIB (Wajib)
+              </label>
               <input 
                 type="text" 
                 value={bib} 
@@ -247,7 +260,10 @@ export default function Home() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider">Foto Diri di Venue (Wajib)</label>
+              <label className="block text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                Foto Diri di Venue (Wajib)
+              </label>
               <input 
                 type="file" 
                 accept="image/*" 
@@ -257,8 +273,9 @@ export default function Home() {
               />
             </div>
 
-            <button type="submit" className="w-full py-4 mt-4 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-bold rounded-xl shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:shadow-[0_0_25px_rgba(239,68,68,0.5)] hover:-translate-y-1 transition-all duration-300">
-              🔍 Cari Hasil
+            <button type="submit" className="flex items-center justify-center gap-2 w-full py-4 mt-4 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-bold rounded-xl shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:shadow-[0_0_25px_rgba(239,68,68,0.5)] hover:-translate-y-1 transition-all duration-300">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              Cari Hasil
             </button>
           </form>
         )}
@@ -267,7 +284,7 @@ export default function Home() {
         {step === 'SUCCESS_UPLOAD' && (
           <div className="space-y-10 animate-in slide-in-from-bottom-10 duration-700">
             <div className="bg-gradient-to-r from-red-900/40 to-amber-900/40 p-8 rounded-3xl border border-red-500/30 text-center shadow-[0_0_40px_rgba(239,68,68,0.15)] backdrop-blur-xl">
-              <div className="text-4xl mb-4">🎉</div>
+              <svg className="w-16 h-16 text-amber-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <h2 className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-red-400 mb-2">
                 {feedbackMsg}
               </h2>
@@ -276,10 +293,11 @@ export default function Home() {
             {renderPhotoGrid()}
 
             <div className="max-w-2xl mx-auto bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl text-center shadow-xl mt-12">
-              <h3 className="text-lg font-bold text-slate-200 mb-4">Ingin mencari fotomu yang lain yang mungkin belum masuk di list ini?</h3>
-              <p className="text-sm text-slate-400 mb-6">Gunakan fitur Face Recognition dengan Face-Scanning (Live Selfie) agar sistem memindai murni melalui kontur wajah Anda.</p>
-              <button onClick={startCamera} className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:scale-105">
-                📸 Cari Menggunakan Live Selfie
+              <h3 className="text-lg font-bold text-slate-200 mb-4">Mencari foto lain yang belum tampil?</h3>
+              <p className="text-sm text-slate-400 mb-6">Gunakan Face Recognition (Live Selfie) agar sistem memindai murni melalui kontur wajah Anda.</p>
+              <button onClick={startCamera} className="flex items-center justify-center gap-2 w-full md:w-auto mx-auto px-8 py-4 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:scale-105">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                Face Recognition (Live Selfie)
               </button>
             </div>
           </div>
@@ -288,16 +306,17 @@ export default function Home() {
         {/* ================= FLOW 3: UPLOAD FAILED ================= */}
         {step === 'UPLOAD_FAILED' && (
           <div className="max-w-2xl mx-auto text-center p-8 bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-red-500/30 shadow-[0_0_30px_rgba(239,68,68,0.15)] animate-in zoom-in-95 duration-500">
-            <div className="text-5xl mb-4">🕵️‍♂️</div>
+            <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             <p className="text-slate-200 font-medium mb-8 leading-relaxed text-lg">{feedbackMsg}</p>
-            <button onClick={startCamera} className="w-full md:w-auto px-8 py-4 bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(251,191,36,0.3)] hover:scale-105">
-              📸 Buka Kamera untuk Face Recognition
+            <button onClick={startCamera} className="flex items-center justify-center gap-2 w-full md:w-auto mx-auto px-8 py-4 bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(251,191,36,0.3)] hover:scale-105">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              Face Recognition Sekarang
             </button>
           </div>
         )}
 
         {/* ================= FLOW 4: CAMERA READY ================= */}
-        {step === 'CAMERA_READY' && streamRef.current && (
+        {step === 'CAMERA_READY' && (
           <div className="max-w-2xl mx-auto bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-6 overflow-hidden flex flex-col items-center animate-in zoom-in-95 duration-500">
             <p className="font-medium text-amber-400 mb-6 text-center">{feedbackMsg}</p>
             <div className="relative w-full max-w-sm rounded-2xl overflow-hidden border-2 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.3)] bg-slate-950 aspect-[3/4]">
@@ -321,7 +340,10 @@ export default function Home() {
         {/* ================= LOADING SCANNING ================= */}
         {(step === 'SCANNING_UPLOAD' || step === 'SCANNING_LIVE') && (
           <div className="max-w-2xl mx-auto text-center p-12 bg-slate-900/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-800">
-            <div className="w-16 h-16 border-4 border-red-500 border-t-amber-400 rounded-full animate-spin mx-auto mb-6 shadow-[0_0_15px_rgba(239,68,68,0.5)]"></div>
+            <svg className="animate-spin w-16 h-16 text-amber-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
             <p className="text-lg font-medium text-amber-400 animate-pulse">{feedbackMsg}</p>
           </div>
         )}
@@ -330,12 +352,13 @@ export default function Home() {
         {step === 'SUCCESS_LIVE' && (
           <div className="space-y-10 animate-in slide-in-from-bottom-10 duration-700">
             <div className="bg-gradient-to-r from-red-900/40 to-amber-900/40 p-8 rounded-3xl border border-red-500/30 text-center shadow-[0_0_40px_rgba(239,68,68,0.15)] backdrop-blur-xl">
-              <div className="text-4xl mb-4">🎉</div>
+              <svg className="w-16 h-16 text-amber-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               <h2 className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-red-400 mb-6">
                 {feedbackMsg}
               </h2>
-              <button onClick={() => { setStep('IDLE'); setResults([]); setBib(''); setImageFile(null); }} className="px-8 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold rounded-xl transition-all hover:shadow-lg">
-                🔄 Kembali ke Awal
+              <button onClick={() => { setStep('IDLE'); setResults([]); setBib(''); setImageFile(null); }} className="flex items-center justify-center gap-2 mx-auto px-8 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold rounded-xl transition-all hover:shadow-lg">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Kembali ke Awal
               </button>
             </div>
             {renderPhotoGrid()}
@@ -345,13 +368,14 @@ export default function Home() {
         {/* ================= FLOW 6: TOTAL FAILED ================= */}
         {step === 'TOTAL_FAILED' && (
           <div className="max-w-2xl mx-auto text-center p-8 bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-slate-800 shadow-2xl animate-in zoom-in-95 duration-500">
-            <div className="text-5xl mb-4">😔</div>
+            <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             <p className="text-slate-300 font-medium mb-8 leading-relaxed text-lg">{feedbackMsg}</p>
-            <a href="https://drive.google.com/drive/u/0/folders/1E2OgzNbAtkcuyoXByjRoMGY2AX1wdWi2" target="_blank" rel="noreferrer" className="inline-block w-full md:w-auto px-8 py-4 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/50 font-bold rounded-xl transition-all hover:-translate-y-1 shadow-md mb-4">
-              🔍 Telusuri Galeri Manual (G-Drive)
+            <a href="https://drive.google.com/drive/u/0/folders/1E2OgzNbAtkcuyoXByjRoMGY2AX1wdWi2" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full md:w-auto mx-auto px-8 py-4 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/50 font-bold rounded-xl transition-all hover:-translate-y-1 shadow-md mb-4">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>
+              Telusuri Galeri Manual
             </a>
             <button onClick={() => setStep('IDLE')} className="block w-full text-center py-3 text-sm text-red-400 hover:text-red-300 underline underline-offset-4 transition-colors mt-2">
-              Coba Ulang Pencarian AI
+              Coba Ulang Pencarian
             </button>
           </div>
         )}
