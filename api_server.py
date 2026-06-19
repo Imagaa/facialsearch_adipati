@@ -29,8 +29,9 @@ import os
 DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:dEgJyweoBvYYmWLVoKOKiPZuHYHCsuax@thomas.proxy.rlwy.net:47314/railway")
 
 @app_api.post("/search-double-tap")
-async def search_double_tap(bib: str = Form(...), file: UploadFile = File(...)):
-    # 1. Baca Gambar dari Frontend
+# Taktik Baru: bib bersifat opsional (default string kosong)
+async def search_double_tap(bib: str = Form(""), file: UploadFile = File(...)):
+    # 1. Baca Gambar
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -40,33 +41,59 @@ async def search_double_tap(bib: str = Form(...), file: UploadFile = File(...)):
     if len(faces) == 0:
         return {"status": "failed", "message": "no_face_detected"}
     
-    # Ambil wajah terbesar (biasanya yang selfie)
+    # Ambil wajah terbesar (selfie)
     faces = sorted(faces, key=lambda x: (x.bbox[2]-x.bbox[0]) * (x.bbox[3]-x.bbox[1]), reverse=True)
     embedding = faces[0].embedding
     vector_str = "[" + ",".join(map(str, embedding)) + "]"
 
-    # 3. Double-Tap Query ke PostgreSQL Railway
+    # 3. KONEKSI & SMART QUERY
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
     
-    # Batas toleransi jarak Cosine ArcFace adalah 0.6 (Semakin mendekati 0 = wajah yang sama)
-    query = """
-        SELECT 
-            r.file_name, 
-            r.gdrive_id, 
-            r.bib_numbers, 
-            (f.face_vector <=> %s) AS distance 
-        FROM runner_photos r
-        JOIN photo_faces f ON r.id = f.photo_id
-        WHERE r.bib_numbers::text ILIKE %s
-        AND (f.face_vector <=> %s) < 0.6
-        ORDER BY distance ASC
-        LIMIT 10;
-    """
-    
-    cur.execute(query, (vector_str, f"%{bib}%", vector_str))
+    if bib and bib.strip() != "":
+        # =====================================================================
+        # SKENARIO 1: UPLOAD (BIB + WAJAH) -> SMART HYBRID SEARCH
+        # Logika: Cari yang Wajahnya Mirip ATAU BIB-nya Mirip.
+        # Mitigasi: Ambang batas wajah dilonggarkan sedikit (0.65). 
+        # Jika hanya BIB yang cocok tapi wajah beda, nilai distance diset 2.0 (taruh di bawah).
+        # =====================================================================
+        query = """
+            WITH matched_photos AS (
+                SELECT r.id, r.file_name, r.gdrive_id, r.bib_numbers,
+                       MIN(f.face_vector <=> %s) as face_distance
+                FROM runner_photos r
+                LEFT JOIN photo_faces f ON r.id = f.photo_id
+                GROUP BY r.id, r.file_name, r.gdrive_id, r.bib_numbers
+            )
+            SELECT file_name, gdrive_id, bib_numbers, COALESCE(face_distance, 2.0) as final_distance
+            FROM matched_photos
+            WHERE face_distance < 0.65 OR bib_numbers::text ILIKE %s
+            ORDER BY final_distance ASC
+            LIMIT 20;
+        """
+        cur.execute(query, (vector_str, f"%{bib}%"))
+    else:
+        # =====================================================================
+        # SKENARIO 2: LIVE SELFIE (MURNI WAJAH)
+        # Logika: Abaikan BIB sama sekali. Fokus 100% pada ekstraksi matriks HP.
+        # =====================================================================
+        query = """
+            WITH matched_photos AS (
+                SELECT r.id, r.file_name, r.gdrive_id, r.bib_numbers,
+                       MIN(f.face_vector <=> %s) as face_distance
+                FROM runner_photos r
+                JOIN photo_faces f ON r.id = f.photo_id
+                GROUP BY r.id, r.file_name, r.gdrive_id, r.bib_numbers
+            )
+            SELECT file_name, gdrive_id, bib_numbers, face_distance as final_distance
+            FROM matched_photos
+            WHERE face_distance < 0.60
+            ORDER BY final_distance ASC
+            LIMIT 15;
+        """
+        cur.execute(query, (vector_str,))
+        
     rows = cur.fetchall()
-    
     cur.close()
     conn.close()
 
@@ -78,7 +105,10 @@ async def search_double_tap(bib: str = Form(...), file: UploadFile = File(...)):
         results.append({
             "file_name": row[0],
             "gdrive_id": row[1],
-            "distance": float(row[3])
+            "bib_numbers": row[2] if row[2] else "",
+            # Normalisasi: Jika distance 2.0 (Hasil dari BIB murni tanpa kecocokan wajah), 
+            # setel visual distance agar terlihat masuk akal (misal jadi 0.99)
+            "distance": float(row[3]) if float(row[3]) <= 1.0 else 0.99
         })
 
     return {"status": "success", "matches_found": len(results), "data": results}
