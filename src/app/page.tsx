@@ -13,7 +13,9 @@ export default function Home() {
     file_name: string;
     gdrive_id: string;
     distance: number;
+    bib_numbers?: string;
   };
+  
   const [results, setResults] = useState<SearchResult[]>([]);
   
   const [feedbackMsg, setFeedbackMsg] = useState("");
