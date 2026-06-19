@@ -1,7 +1,6 @@
 providers = ["python"]
 
 [phases.setup]
-# Lapis 1: Injeksi paket grafis modern untuk Ubuntu 24.04 (Noble)
 aptPkgs = [
     "libgl1",
     "libglx-mesa0",
@@ -15,8 +14,8 @@ aptPkgs = [
 ]
 
 [phases.build]
-# Lapis 2: Membunuh OpenCV GUI
+# Membunuh versi GUI dan memaksa instalasi ulang versi Headless murni dari titik nol
 cmds = [
-    "pip uninstall -y opencv-python",
-    "pip install opencv-python-headless"
+    "pip uninstall -y opencv-python opencv-python-headless",
+    "pip install --force-reinstall opencv-python-headless"
 ]
