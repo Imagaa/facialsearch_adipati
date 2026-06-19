@@ -184,14 +184,24 @@ export default function Home() {
                         <img 
                           src={previewUrl!} 
                           alt={item.file_name} 
-                          className="object-cover w-full h-full text-transparent" 
+                          className="object-cover w-full h-full text-transparent transition-opacity duration-300" 
                           loading="lazy"
                           onError={(e) => {
-                            // Safe Auto-Retry: Jika thumbnail diblokir rate-limit, coba pakai endpoint original 1x saja
                             const target = e.currentTarget;
-                            const fallbackSrc = `https://drive.google.com/uc?export=view&id=${item.gdrive_id}`;
-                            if (target.src !== fallbackSrc) {
-                              target.src = fallbackSrc;
+                            const id = item.gdrive_id;
+                            
+                            // AMUNISI 4 LAPIS (Bypass Rate-Limit Google)
+                            const lh3Url = `https://lh3.googleusercontent.com/d/${id}`;
+                            const ucUrl = `https://drive.google.com/uc?export=view&id=${id}`;
+                            const fallbackUrl = `https://placehold.co/600x400/f0fdfa/0f766e?text=Pratinjau+Dibatasi+Google%5CnSilakan+Unduh+Langsung`;
+
+                            if (target.src.includes('thumbnail')) {
+                              target.src = lh3Url; // Lapis 2: Endpoint CDN rahasia Google
+                            } else if (target.src === lh3Url) {
+                              target.src = ucUrl;  // Lapis 3: Endpoint Original
+                            } else if (target.src === ucUrl) {
+                              target.src = fallbackUrl; // Lapis 4: Placeholder elegan (UI Aman)
+                              target.className = "object-contain w-full h-full p-4 opacity-80";
                             }
                           }}
                         />
