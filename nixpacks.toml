@@ -1,3 +1,5 @@
+providers = ["python"]
+
 [phases.setup]
 # Lapis 1: Injeksi paket grafis modern untuk Ubuntu 24.04 (Noble)
 aptPkgs = [
