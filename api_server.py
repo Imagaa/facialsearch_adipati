@@ -24,7 +24,9 @@ print("[*] MEMUAT MESIN ARCFACE 512D (MATCHED WITH INDEXER)...")
 face_app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
 face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-DB_URL = "postgresql://postgres:dEgJyweoBvYYmWLVoKOKiPZuHYHCsuax@thomas.proxy.rlwy.net:47314/railway"
+import os
+# Akan mengambil URL dari Environment Variable Railway, jika tidak ada, gunakan hardcode (untuk lokal)
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:dEgJyweoBvYYmWLVoKOKiPZuHYHCsuax@thomas.proxy.rlwy.net:47314/railway")
 
 @app_api.post("/search-double-tap")
 async def search_double_tap(bib: str = Form(...), file: UploadFile = File(...)):
