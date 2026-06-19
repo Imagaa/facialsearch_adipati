@@ -1,0 +1,18 @@
+[phases.setup]
+# Lapis 1: Memaksa injeksi pustaka grafis OS yang hilang
+aptPkgs = [
+    "libgl1-mesa-glx",
+    "libglib2.0-0",
+    "libsm6",
+    "libxext6",
+    "libxrender1",
+    "libxcb1",
+    "libx11-xcb1"
+]
+
+[phases.build]
+# Lapis 2: Membajak proses build untuk membunuh OpenCV GUI yang diselundupkan Insightface
+cmds = [
+    "pip uninstall -y opencv-python",
+    "pip install opencv-python-headless"
+]
