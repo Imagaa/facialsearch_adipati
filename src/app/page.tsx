@@ -21,7 +21,10 @@ export default function Home() {
       formData.append('bib', bibInput);
       formData.append('file', fileBlob, 'selfie.jpg');
 
-      const res = await fetch("http://127.0.0.1:8000/search-double-tap", {
+      // Taktik Dinamis: Gunakan ENV Vercel, jika kosong fallback ke localhost
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+      const res = await fetch(`${API_BASE_URL}/search-double-tap`, {
         method: "POST",
         body: formData
       });
