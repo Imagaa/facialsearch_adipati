@@ -1,28 +1,33 @@
-# =========================
-# LINGKUNGAN NODE.JS (NEXT.JS)
-# =========================
+# =========================================
+# PERTAHANAN REPOSITORI ADIPATI QRIS RUN
+# =========================================
+
+# 1. Kredensial & Rahasia (HARAM TER-PUSH)
+credentials.json
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# 2. Database Lokal
+*.sqlite
+*.sqlite3
+*.db
+
+# 3. Ekosistem Node.js & Next.js
 node_modules/
 .next/
 out/
 build/
-.env*.local
-.env
+.DS_Store
+*.log
 
-# =========================
-# LINGKUNGAN PYTHON & AI
-# =========================
+# 4. Ekosistem Python (API & Mesin Indexer)
 venv/
 env/
 __pycache__/
 *.pyc
-
-# =========================
-# FILE MODEL & MEDIA BERAT
-# =========================
-*.onnx
-*.pt
-*.sqlite
-*.db
-# Hati-hati: Jika Anda butuh gambar untuk UI Next.js (di folder public/), 
-# jangan abaikan semua *.png. Cukup abaikan folder RAW saja jika ada.
-Raw/
+.pytest_cache/

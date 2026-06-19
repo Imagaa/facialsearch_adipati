@@ -155,8 +155,8 @@ export default function Home() {
         {step === 'TOTAL_FAILED' && (
           <div className="text-center p-8 bg-red-50 rounded-2xl border border-red-200">
             <p className="text-red-800 font-medium mb-6">{feedbackMsg}</p>
-            <a href="https://drive.google.com/drive/folders/GANTILINK" target="_blank" rel="noreferrer" className="inline-block bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md">🔍 Telusuri Galeri Manual</a>
-            <button onClick={() => setStep('IDLE')} className="block mx-auto mt-6 text-sm text-gray-500 underline">Coba Ulang Pencarian</button>
+            <a href="https://drive.google.com/drive/u/0/folders/1E2OgzNbAtkcuyoXByjRoMGY2AX1wdWi2" target="_blank" rel="noreferrer" className="inline-block bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md">🔍 Telusuri Galeri Manual</a>
+            <button onClick={() => setStep('IDLE')} className="block mx-auto mt-6 text-sm text-gray-500 underline">Coba Ulang Pencarian AI</button>
           </div>
         )}
 
@@ -167,17 +167,56 @@ export default function Home() {
               <button onClick={() => { setStep('IDLE'); setResults([]); setBib(''); setImageFile(null); }} className="mt-2 text-sm text-green-700 underline">Cari Peserta Lain</button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {results.map((item, idx) => (
-                <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="h-64 bg-gray-200 flex items-center justify-center text-gray-400 italic text-center p-4">
-                    [ GDrive ID: {item.gdrive_id} ]<br/>{item.file_name}
+              {results.map((item, idx) => {
+                const isSynced = item.gdrive_id !== 'WAITING_SYNC';
+                
+                // TAKTIK HYBRID: Thumbnail Google + Lazy Loading + Safe Fallback
+                const previewUrl = isSynced ? `https://drive.google.com/thumbnail?id=${item.gdrive_id}&sz=w800` : null;
+                
+                // Query mutlak mencari nama file di folder GDrive Anda
+                const fallbackSearchUrl = `https://drive.google.com/drive/u/0/search?q=type:image%20title:"${item.file_name}"`;
+
+                return (
+                  <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+                    {isSynced ? (
+                      <div className="h-64 w-full bg-gray-100 relative overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img 
+                          src={previewUrl!} 
+                          alt={item.file_name} 
+                          className="object-cover w-full h-full text-transparent" 
+                          loading="lazy"
+                          onError={(e) => {
+                            // Safe Auto-Retry: Jika thumbnail diblokir rate-limit, coba pakai endpoint original 1x saja
+                            const target = e.currentTarget;
+                            const fallbackSrc = `https://drive.google.com/uc?export=view&id=${item.gdrive_id}`;
+                            if (target.src !== fallbackSrc) {
+                              target.src = fallbackSrc;
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-64 bg-teal-50 flex flex-col items-center justify-center text-teal-700 text-center p-6 border-b border-teal-100">
+                        <svg className="w-12 h-12 mb-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <p className="text-sm font-semibold mb-1">Resolusi Tinggi Tersedia</p>
+                        <p className="text-xs opacity-80">Menunggu Sinkronisasi ID</p>
+                      </div>
+                    )}
+                    <div className="p-4 flex flex-col flex-grow">
+                      <p className="font-bold text-gray-800 break-words">{item.file_name}</p>
+                      {/* Mengubah format jarak matriks menjadi persentase akurasi yang lebih mudah dipahami pelari */}
+                      <p className="text-xs text-gray-500 mb-4">Akurasi Kemiripan: {((1 - item.distance) * 100).toFixed(1)}%</p>
+                      
+                      <div className="mt-auto">
+                        <a href={isSynced ? `https://drive.google.com/uc?export=download&id=${item.gdrive_id}` : fallbackSearchUrl} target="_blank" rel="noreferrer" className="block w-full text-center bg-teal-50 hover:bg-teal-100 text-teal-700 font-semibold py-2 px-4 rounded-lg border border-teal-200 transition-colors">
+                          {isSynced ? '⬇️ Unduh Foto Langsung' : '🔗 Lihat di Google Drive'}
+                        </a>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4">
-                    <p className="font-bold text-gray-800">{item.file_name}</p>
-                    <p className="text-xs text-gray-500">Jarak Matriks: {item.distance.toFixed(3)}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
