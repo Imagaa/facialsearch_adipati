@@ -1,6 +1,8 @@
 [phases.setup]
+# Lapis 1: Injeksi paket grafis modern untuk Ubuntu 24.04 (Noble)
 aptPkgs = [
-    "libgl1-mesa-glx",
+    "libgl1",
+    "libglx-mesa0",
     "libglib2.0-0",
     "libsm6",
     "libxext6",
@@ -11,6 +13,7 @@ aptPkgs = [
 ]
 
 [phases.build]
+# Lapis 2: Membunuh OpenCV GUI
 cmds = [
     "pip uninstall -y opencv-python",
     "pip install opencv-python-headless"
