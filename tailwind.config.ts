@@ -12,6 +12,12 @@ const config: Config = {
         background: "var(--background)",
         foreground: "var(--foreground)",
       },
+      keyframes: {
+        scan: {
+          '0%, 100%': { transform: 'translateY(0%)' },
+          '50%': { transform: 'translateY(400%)' },
+        }
+      }
     },
   },
   plugins: [],
