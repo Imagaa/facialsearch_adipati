@@ -2,135 +2,185 @@ import os
 import cv2
 import psycopg2
 import pytesseract
+import easyocr
 import re
 import concurrent.futures
 from psycopg2 import pool
 from insightface.app import FaceAnalysis
+from ultralytics import YOLO
+import warnings
 
-# 1. Bypass Variabel Lingkungan (Hardcode URL Mutlak)
-# GANTI STRING INI dengan Postgres Connection URL (External) utuh dari panel Railway Anda
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+# ================= KONFIGURASI MUTLAK =================
 DB_URL = "postgresql://postgres:dEgJyweoBvYYmWLVoKOKiPZuHYHCsuax@thomas.proxy.rlwy.net:47314/railway"
+TARGET_DIR = r"G:\My Drive\AQR 2026"
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# 2. Inisiasi Otak AI (ONNX ArcFace 512-d)
-print("[*] Memanaskan Mesin AI (Mengunduh model ONNX jika belum ada)...")
+print("[*] ENGINE START: SUPER-MONOLITH HETEROGENEOUS (TRI-CORE VISION & MEMORY)")
+
+# 1. Otak Wajah (CPU)
 app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
 app.prepare(ctx_id=0, det_size=(640, 640))
 
-# 3. Koneksi Database Pool (Untuk Multithreading)
-print("[*] Menembus PostgreSQL Railway...")
-db_pool = psycopg2.pool.ThreadedConnectionPool(1, 15, DB_URL)
+# 2. Otak Pakaian (GPU)
+yolo_model = YOLO('yolov8n.pt')
 
-# Inisiasi Skema (Satu kali jalan)
-init_conn = db_pool.getconn()
-init_cursor = init_conn.cursor()
-init_cursor.execute("ALTER TABLE runner_photos DROP COLUMN IF EXISTS face_vector;")
-init_cursor.execute("ALTER TABLE runner_photos ADD COLUMN IF NOT EXISTS face_vector vector(512);")
-init_conn.commit()
-init_cursor.close()
-db_pool.putconn(init_conn)
-print("[+] Skema Database berhasil ditingkatkan ke 512 Dimensi.")
+# 3. Otak Deep Learning OCR (GPU)
+reader = easyocr.Reader(['en'], gpu=True)
 
-# 4. Path Tesseract Windows (Ubah jika Anda menginstalnya di lokasi berbeda)
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# 4. Koneksi Database Relasional
+db_pool = psycopg2.pool.ThreadedConnectionPool(1, 10, DB_URL)
 
-# 5. Multi-Radar Direktori
-TARGET_DIRS = [
-    r"C:\lari-watcher\Raw",
-]
+# ================= CEK MEMORI DATABASE =================
+print("[*] Membaca ingatan database untuk Incremental Indexing...")
+try:
+    conn = db_pool.getconn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT file_name FROM runner_photos;")
+    # Simpan semua nama file yang sudah terindeks ke dalam Set (Memori super cepat)
+    indexed_files = {row[0] for row in cursor.fetchall()}
+    print(f"[*] Ditemukan {len(indexed_files)} foto yang sudah terindeks di database.")
+except Exception as e:
+    print(f"[FATAL] Gagal membaca database: {e}")
+    indexed_files = set()
+finally:
+    cursor.close()
+    db_pool.putconn(conn)
+# =======================================================
 
-def process_image(file_path, agnostic_name, count):
+def process_image(file_path, file_name, count):
     try:
-        # Gunakan cv2 untuk membaca gambar
         img = cv2.imread(file_path)
-        if img is None:
-            return
+        if img is None: return
 
-        # [MUTLAK] Resize gambar DSLR raksasa agar tidak mencekik CPU
         max_dim = 1600
         h, w = img.shape[:2]
+        img_area = h * w
         if max(h, w) > max_dim:
             scale = max_dim / max(h, w)
             img = cv2.resize(img, (int(w * scale), int(h * scale)))
+            h, w = img.shape[:2]
+            img_area = h * w
 
-        # A. Ekstraksi Vektor Wajah (ONNX)
+        # --- WAJAH ---
         faces = app.get(img)
-        face_vector = None
-        if len(faces) > 0:
-            embedding = faces[0].embedding
-            face_vector = "[" + ",".join(map(str, embedding)) + "]"
+        face_vectors = []
+        for face in faces:
+            embedding = face.embedding
+            vec_str = "[" + ",".join(map(str, embedding)) + "]"
+            face_vectors.append(vec_str)
 
-        # B. Ekstraksi Nomor BIB (Tesseract OCR Super-Resolution)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # --- BIB (TRI-CORE VISION) ---
+        bib_matches = []
+        results = yolo_model(img, classes=[0], verbose=False)
         
-        # 1. UPSCALING KHUSUS OCR: Besarkan gambar abu-abu 2x lipat agar teks jauh (di panggung) bisa dibaca Tesseract
-        ocr_img = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        
-        # 2. CLAHE: Meratakan kontras cahaya (Sangat ampuh untuk foto lari)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced_gray = clahe.apply(ocr_img)
+        for r in results:
+            for box in r.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                if ((x2 - x1) * (y2 - y1)) < (img_area * 0.015):
+                    continue
+                
+                padding_x = int((x2 - x1) * 0.05)
+                padding_y = int((y2 - y1) * 0.05)
+                crop_y1, crop_y2 = max(0, y1 - padding_y), min(h, y2 + padding_y)
+                crop_x1, crop_x2 = max(0, x1 - padding_x), min(w, x2 + padding_x)
+                person_crop = img[crop_y1:crop_y2, crop_x1:crop_x2]
+                
+                # --- CORE 1: EASYOCR ---
+                rgb_crop = cv2.cvtColor(person_crop, cv2.COLOR_BGR2RGB)
+                upscaled_crop = cv2.resize(rgb_crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                ocr_results = reader.readtext(
+                    upscaled_crop, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 
+                    decoder='beamsearch', text_threshold=0.5, mag_ratio=2.0
+                )
+                text_easyocr = " ".join(ocr_results)
 
-        # 3. Whitelist & PSM 11: Paksa Tesseract HANYA baca Huruf Kapital & Angka
-        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        text = pytesseract.image_to_string(enhanced_gray, config=custom_config)
-        
-        # 4. Regex Fleksibel: 1 Huruf Kapital diikuti 3 sampai 5 Angka (Contoh: W299, X3260, A12345)
-        bib_matches = re.findall(r'\b[A-Z]\d{3,5}\b', text)
-        
-        # 4. Hapus duplikat (jika Tesseract membaca nomor yang sama dua kali di satu foto)
+                # --- CORE 2: TESSERACT (CLAHE) ---
+                gray = cv2.cvtColor(person_crop, cv2.COLOR_BGR2GRAY)
+                ocr_img = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                ocr_img = cv2.medianBlur(ocr_img, 3)
+                
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                enhanced_gray = clahe.apply(ocr_img)
+                custom_config = r'--oem 3 --psm 11 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                text_tesseract_clahe = pytesseract.image_to_string(enhanced_gray, config=custom_config)
+
+                # --- CORE 3: TESSERACT (OTSU BINARIZATION) ---
+                # Penyelamat warna aqua & kontras rendah
+                _, otsu_thresh = cv2.threshold(ocr_img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+                text_tesseract_otsu = pytesseract.image_to_string(otsu_thresh, config=custom_config)
+
+                # --- FUSI & VALIDATOR ---
+                combined_raw_text = f"{text_easyocr} {text_tesseract_clahe} {text_tesseract_otsu}"
+                words = combined_raw_text.replace('\n', ' ').split()
+                
+                person_bibs = []
+                for word in words:
+                    clean_word = re.sub(r'[^A-Z0-9]', '', word)
+                    if clean_word == "2026": continue
+                    if re.fullmatch(r'[A-Z]\d{3,4}', clean_word) or re.fullmatch(r'\d{4}', clean_word):
+                        person_bibs.append(clean_word)
+
+                bib_matches.extend(person_bibs)
+
         bib_matches = list(set(bib_matches))
 
-        # C. Tembak ke Database (Ambil koneksi dari pool)
+        # --- DATABASE TRANSACTION ---
         conn = db_pool.getconn()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO runner_photos (file_name, gdrive_id, bib_numbers, face_vector)
-            VALUES (%s, %s, %s, %s)
-        """, (agnostic_name, 'WAITING_SYNC', bib_matches, face_vector))
-        conn.commit()
-        cursor.close()
-        db_pool.putconn(conn)
+        try:
+            cursor.execute("""
+                INSERT INTO runner_photos (file_name, gdrive_id, bib_numbers)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (file_name) 
+                DO UPDATE SET bib_numbers = EXCLUDED.bib_numbers
+                RETURNING id;
+            """, (file_name, 'WAITING_SYNC', bib_matches))
+            
+            photo_id = cursor.fetchone()[0]
 
-        print(f"[{count}] [DONE] {agnostic_name} | BIB: {bib_matches} | Wajah: {'Ya' if face_vector else 'Tidak'}")
+            cursor.execute("DELETE FROM photo_faces WHERE photo_id = %s;", (photo_id,))
 
-    except Exception as e:
-        print(f"[{count}] [ERROR] Gagal memproses {agnostic_name}: {e}")
-        if 'conn' in locals() and conn:
+            for face_vec in face_vectors:
+                cursor.execute("""
+                    INSERT INTO photo_faces (photo_id, face_vector)
+                    VALUES (%s, %s);
+                """, (photo_id, face_vec))
+
+            conn.commit()
+            print(f"[{count}] [DONE] {file_name} | BIB: {bib_matches} | Wajah: {len(face_vectors)}")
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
             db_pool.putconn(conn)
 
+    except Exception as e:
+        print(f"[{count}] [ERROR] Gagal memproses {file_name}: {e}")
 
-# ================= EKSEKUSI UTAMA (MULTITHREADING) =================
+# ================= PENGUMPULAN FILE =================
 files_to_process = []
-processed_count = 0
+if os.path.exists(TARGET_DIR):
+    for file in os.listdir(TARGET_DIR):
+        if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+            # [LOGIKA MEMORI] Lewati file jika sudah ada di database
+            if file in indexed_files:
+                continue
+            files_to_process.append((os.path.join(TARGET_DIR, file), file))
+else:
+    print(f"[FATAL] Folder tidak ditemukan: {TARGET_DIR}")
 
-# 1. Kumpulkan seluruh antrean foto
-for base_dir in TARGET_DIRS:
-    if not os.path.exists(base_dir):
-        print(f"[SKIP] Direktori tidak ditemukan: {base_dir}")
-        continue
-    
-    print(f"\n[>] MENYAPU DIREKTORI: {base_dir}")
-    for fg in os.listdir(base_dir):
-        fg_path = os.path.join(base_dir, fg)
-        if not os.path.isdir(fg_path): 
-            continue
+print(f"\n[*] Total {len(files_to_process)} FOTO BARU siap dieksekusi.")
 
-        for file in os.listdir(fg_path):
-            if file.lower().endswith(('.png', '.jpg', '.jpeg')):
-                file_path = os.path.join(fg_path, file)
-                agnostic_name = f"{fg}/{file}"
-                files_to_process.append((file_path, agnostic_name))
-
-print(f"\n[*] Total {len(files_to_process)} foto masuk antrean. Memulai pemrosesan paralel...")
-
-# 2. Eksekusi Paralel (12 core bekerja bersamaan secara brutal)
-with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-    futures = []
-    for file_path, agnostic_name in files_to_process:
-        processed_count += 1
-        futures.append(executor.submit(process_image, file_path, agnostic_name, processed_count))
-    
-    # Tunggu semua thread selesai
-    concurrent.futures.wait(futures)
+if len(files_to_process) == 0:
+    print("[*] Tidak ada foto baru untuk diproses. Mesin beristirahat.")
+else:
+    print("[*] MEMULAI PEMROSESAN BRUTAL. MOHON PANTAU SUHU LAPTOP ANDA...\n")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        for i, (file_path, file_name) in enumerate(files_to_process, 1):
+            executor.submit(process_image, file_path, file_name, i)
 
 db_pool.closeall()
-print("\n[!] SELURUH DATA SELESAI DI-INDEX KEDALAM DATABASE.")
+print("\n[!] OPERASI SELESAI.")

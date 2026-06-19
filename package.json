@@ -14,7 +14,6 @@
     "@vladmandic/face-api": "^1.7.15",
     "canvas": "^3.2.3",
     "dotenv": "^17.4.2",
-    "face-api.js": "^0.22.2",
     "next": "14.2.35",
     "pg": "^8.21.0",
     "react": "^18",
