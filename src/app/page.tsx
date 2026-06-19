@@ -8,7 +8,14 @@ export default function Home() {
   const [step, setStep] = useState<SearchStep>('IDLE');
   const [bib, setBib] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [results, setResults] = useState<any[]>([]);
+  
+  type SearchResult = {
+    file_name: string;
+    gdrive_id: string;
+    distance: number;
+  };
+  const [results, setResults] = useState<SearchResult[]>([]);
+  
   const [feedbackMsg, setFeedbackMsg] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -41,7 +48,7 @@ export default function Home() {
       }
     } catch (err) {
       console.error(err);
-      triggerFallback(source);
+      triggerFallback('UPLOAD');
     }
   };
 
@@ -75,6 +82,7 @@ export default function Home() {
       if (videoRef.current) videoRef.current.srcObject = stream;
       streamRef.current = stream;
     } catch (err) {
+      console.error(err);
       alert("Akses kamera ditolak.");
       setStep('UPLOAD_FAILED');
     }
